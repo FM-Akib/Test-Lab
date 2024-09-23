@@ -1,4 +1,4 @@
-import  { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 
 const socket = io('http://localhost:5000');
@@ -36,6 +36,11 @@ const Chat = () => {
     socket.on('receive_message', (data) => {
       setChat((prevChat) => [...prevChat, data]);
     });
+
+    // Clean up to avoid duplicate listeners when the component re-renders
+    return () => {
+      socket.off('receive_message');
+    };
   }, []);
 
   // Send message to server
@@ -48,10 +53,10 @@ const Chat = () => {
         time: new Date().toLocaleTimeString(),
       };
 
-      // Emit the message to the server (don't add to chat here!)
+      // Emit the message to the server (but don't update the chat locally)
       socket.emit('send_message', messageData);
 
-      setMessage(''); // Clear input
+      setMessage(''); // Clear input after sending
     }
   };
 
