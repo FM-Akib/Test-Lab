@@ -11,6 +11,8 @@ import {
 } from "react-router-dom";
 import Home from './Pages/Home';
 import Iiuc from './Pages/Iiuc';
+import CreateQuiz from './Pages/CreateQuiz';
+import ParticipateQuiz from './Pages/ParticipateQuiz';
 
 const router = createBrowserRouter([
   {
@@ -21,6 +23,14 @@ const router = createBrowserRouter([
     path: "/iiuc",
     element: <Iiuc/>,
   },
+  {
+    path: "/quiz",
+    element: <CreateQuiz/>,
+  },
+  {
+    path: "/quiz/:id",
+    element: <ParticipateQuiz />
+  }
 ]);
 
 ReactDOM.createRoot(document.getElementById('root')).render(

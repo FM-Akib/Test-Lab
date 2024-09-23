@@ -69,6 +69,7 @@ const Navbar = () => {
         <div className="navbar-center hidden lg:flex">
           <ul className="menu menu-horizontal px-1">
             <li><Link to="/iiuc">iiuc</Link></li>
+            <li><Link to="/quiz">quiz</Link></li>
             <li>
               <details>
                 <summary>Parent</summary>
