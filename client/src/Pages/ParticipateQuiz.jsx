@@ -1,112 +1,161 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import io from 'socket.io-client';
 
 const socket = io('http://localhost:5000');
 
 const ParticipateQuiz = () => {
-  const { id } = useParams(); // Quiz ID from the URL
-  const [quiz, setQuiz] = useState(null); // Store the quiz data
-  const [currentQuestion, setCurrentQuestion] = useState(0); // Track current question
-  const [selectedOption, setSelectedOption] = useState(null); // Selected answer
-  const [result, setResult] = useState(null); // Store result of each question
-  const [quizFinished, setQuizFinished] = useState(false); // To track if quiz is finished
-  const [startTime, setStartTime] = useState(null); // Start time for quiz
-  const [endTime, setEndTime] = useState(null); // End time for quiz
-  const [totalTime, setTotalTime] = useState(null); // Total time taken
-  console.log(endTime,id)
+  const { id } = useParams();
+  const [nickname, setNickname] = useState('');
+  const [room, setRoom] = useState('');
+  const [quiz, setQuiz] = useState(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
+  const [countdown, setCountdown] = useState(0);
+  const [results, setResults] = useState([]);
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [quizEnded, setQuizEnded] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
   useEffect(() => {
-    // Emit a request to join the quiz room and get quiz data
-    socket.emit('join_quiz', id);
-    socket.on('quiz_data', (data) => {
-      setQuiz(data);
-      setStartTime(new Date()); // Start the quiz timer
+    const searchParams = new URLSearchParams(location.search);
+    setRoom(searchParams.get('room') || '');
+  }, [location.search]);
+
+  // Join room and fetch quiz
+  const joinRoom = () => {
+    socket.emit('join_quiz', { quizId: id, room });
+    socket.on('quiz_data', (quizData) => {
+      setQuiz(quizData);
+      setCountdown(quizData.questions[0].timeLimit);
+      setQuizStarted(true);
     });
 
-    return () => {
-      socket.off('quiz_data'); // Clean up when component is unmounted
-    };
-  }, [id]);
+    socket.on('error', (err) => {
+      alert(err);
+      navigate('/'); // Navigate back to the home page if room is wrong
+    });
+  };
+
+
+  useEffect(() => {
+    if (quiz && quizStarted && !quizEnded) {
+      const timer = setInterval(() => {
+        if (countdown > 0) {
+          setCountdown(countdown - 1);
+        } else {
+          nextQuestion(); // Auto move to next question when time runs out
+        }
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }
+  }, [countdown, quizStarted, quizEnded]);
 
   const submitAnswer = () => {
-    if (selectedOption === null) return;
-
-    // Emit the selected answer to the server
-    socket.emit('submit_answer', { quizId: id, answerIndex: selectedOption, questionIndex: currentQuestion });
-
-    // Listen for the result from the server
-    socket.on('answer_result', ({ isCorrect }) => {
-      setResult(isCorrect ? 'Correct!' : 'Incorrect!');
-
-      // Move to the next question after 2 seconds
-      setTimeout(() => {
-        setResult(null);
-
-        // If the current question is the last one, finish the quiz
-        if (currentQuestion === quiz.questions.length - 1) {
-          finishQuiz();
-        } else {
-          setCurrentQuestion(currentQuestion + 1); // Move to the next question
-          setSelectedOption(null); // Reset selected option
-        }
-      }, 2000);
+    socket.emit('submit_answer', { quizId: id, room, answerIndex: selectedAnswer, questionIndex: currentQuestionIndex });
+    socket.on('answer_result', (data) => {
+      setResults((prevResults) => [
+        ...prevResults,
+        { question: quiz.questions[currentQuestionIndex], givenAnswer: selectedAnswer, isCorrect: data.isCorrect }
+      ]);
+      nextQuestion();
     });
   };
 
-  const finishQuiz = () => {
-    const endTime = new Date();
-    setEndTime(endTime);
-    const timeTaken = Math.floor((endTime - startTime) / 1000); // Calculate time in seconds
-    setTotalTime(timeTaken);
-    setQuizFinished(true);
+  const nextQuestion = () => {
+    if (currentQuestionIndex + 1 < quiz.questions.length) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setSelectedAnswer(null);
+      setCountdown(quiz.questions[currentQuestionIndex + 1].timeLimit);
+    } else {
+      endQuiz(); // End quiz after the last question
+    }
   };
 
-  if (!quiz) return <p>Loading quiz...</p>; // Display loading message while quiz data is being fetched
+  const endQuiz = () => {
+    setQuizEnded(true);
+  };
 
-  // Check if quiz is finished
-  if (quizFinished) {
+  if (!quizStarted) {
     return (
-      <div className="p-4">
-        <h1 className="text-2xl font-bold">Quiz Finished!</h1>
-        <p className="text-lg">Your total time: {totalTime} seconds</p>
-        <p className="text-lg">Thank you for participating!</p>
+      <div className="p-8 max-w-md mx-auto bg-white shadow-lg rounded-lg">
+        <h2 className="text-2xl font-bold mb-4">Join Quiz</h2>
+        <input
+          type="text"
+          placeholder="Your Nickname"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          className="w-full p-2 border rounded mb-4"
+        />
+        <input
+          type="text"
+          placeholder="Room Name"
+          value={room}
+          onChange={(e) => setRoom(e.target.value)}
+          className="w-full p-2 border rounded mb-4"
+        />
+        <button onClick={joinRoom} className="bg-blue-500 text-white p-2 rounded w-full">
+          Join Room
+        </button>
       </div>
     );
   }
 
-  // Display the current question
-  const question = quiz.questions[currentQuestion];
-  if (!question) return <p>No questions available for this quiz!</p>;
+  if (quizEnded) {
+    return (
+      <div className="p-8 max-w-md mx-auto bg-white shadow-lg rounded-lg">
+        <h2 className="text-2xl font-bold mb-4">Quiz Results</h2>
+        {results.map((result, index) => (
+          <div key={index} className="mb-4 p-4 bg-gray-100 rounded-lg">
+            <p className="font-bold">{index + 1}. {result.question.questionText}</p>
+            <p>Your Answer: {result.question.answers[result.givenAnswer]}</p>
+            <p>Correct Answer: {result.question.answers[result.question.correctAnswer]}</p>
+            <p className={result.isCorrect ? 'text-green-500' : 'text-red-500'}>
+              {result.isCorrect ? 'Correct' : 'Incorrect'}
+            </p>
+          </div>
+        ))}
+        <p className="text-lg font-bold">Total Correct: {results.filter(r => r.isCorrect).length} / {quiz.questions.length}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold">{quiz.title}</h1>
-      <p className="text-lg mt-4">Question {currentQuestion + 1} of {quiz.questions.length}</p>
-
-      <div className="my-4">
-        <p className="text-xl">{question.questionText}</p>
-
-        <div className="grid grid-cols-1 gap-2 mt-4">
-          {question.options.map((option, index) => (
+    <div className="p-8 max-w-md mx-auto bg-white shadow-lg rounded-lg">
+      {quiz ? (
+        <>
+          <h2 className="text-2xl font-bold mb-4">{quiz.title}</h2>
+          <div className="mb-4">
+            <p className="font-bold">Question {currentQuestionIndex + 1}:</p>
+            <p>{quiz.questions[currentQuestionIndex].questionText}</p>
+          </div>
+          <div className="mb-4">
+            {quiz.questions[currentQuestionIndex].answers.map((answer, index) => (
+              <button
+                key={index}
+                className={`w-full p-2 mb-2 border rounded ${selectedAnswer === index ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                onClick={() => setSelectedAnswer(index)}
+              >
+                {answer}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-between items-center">
             <button
-              key={index}
-              onClick={() => setSelectedOption(index)}
-              className={`p-2 border rounded ${selectedOption === index ? 'bg-blue-500 text-white' : ''}`}
+              onClick={submitAnswer}
+              className="bg-green-500 text-white p-2 rounded"
+              disabled={selectedAnswer === null}
             >
-              {option}
+              Submit Answer
             </button>
-          ))}
-        </div>
-      </div>
-
-      {result && <p className="mt-2 text-lg font-bold">{result}</p>} {/* Display correct/incorrect result */}
-
-      <button
-        onClick={submitAnswer}
-        className="bg-green-500 text-white p-2 rounded mt-4"
-      >
-        Submit Answer
-      </button>
+            <p className="text-xl font-bold">{countdown}s</p>
+          </div>
+        </>
+      ) : (
+        <div>Loading quiz...</div>
+      )}
     </div>
   );
 };

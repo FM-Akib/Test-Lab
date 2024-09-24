@@ -23,42 +23,52 @@ let quizzes = {};
 io.on('connection', (socket) => {
   console.log('New user connected:', socket.id);
 
-  /**
-   * QUIZ CREATION HANDLER
-   * When a user creates a quiz, we generate a quiz ID and store the quiz data
-   */
-  socket.on('create_quiz', (quizData) => {
-    const quizId = Math.random().toString(36).substr(2, 9); // Generate a random quiz ID
-    quizzes[quizId] = quizData; // Store the quiz data in memory
-    socket.emit('quiz_created', quizId); // Send quiz ID back to the creator
-  });
+ // Handle quiz creation
+ socket.on('create_quiz', (quizData) => {
+  const quizId = Math.random().toString(36).substr(2, 9); // Generate a random quiz ID
+  const roomName = quizData.roomName;
+  quizzes[quizId] = { ...quizData, roomName }; // Store the quiz with roomName
 
-  /**
-   * QUIZ JOIN HANDLER
-   * When a user joins a quiz, retrieve the quiz data based on quizId
-   */
-  socket.on('join_quiz', (quizId) => {
-    const quiz = quizzes[quizId];
-    if (quiz) {
-      socket.join(quizId); // User joins the room associated with the quiz
-      socket.emit('quiz_data', quiz); // Send the quiz data to the user
-    } else {
-      socket.emit('error', 'Quiz not found'); // Error handling if quiz is not found
-    }
-  });
+  const shareableLink = `http://localhost:5173/quiz/${quizId}?room=${roomName}`;
+  socket.emit('quiz_created', { quizId, shareableLink }); // Send the shareable link back to the creator
+});
 
-  /**
-   * ANSWER SUBMISSION HANDLER
-   * When a user submits an answer, check if it is correct and return the result
-   */
-  socket.on('submit_answer', ({ quizId, answerIndex, questionIndex }) => {
-    const quiz = quizzes[quizId];
-    if (quiz) {
-      const correctAnswer = quiz.questions[questionIndex].correctAnswer;
-      const isCorrect = correctAnswer === answerIndex; // Check if the answer is correct
-      socket.emit('answer_result', { isCorrect }); // Send the result to the user
-    }
-  });
+// Handle quiz join
+socket.on('join_quiz', ({ quizId, room }) => {
+  const quiz = quizzes[quizId];
+  if (quiz && quiz.roomName === room) {
+    socket.join(quizId);
+    socket.emit('quiz_data', quiz);
+  } else {
+    socket.emit('error', 'Quiz not found or wrong room name');
+  }
+});
+
+// Handle quiz answer submission
+socket.on('submit_answer', ({ quizId, room, answerIndex, questionIndex }) => {
+  const quiz = quizzes[quizId];
+  if (quiz) {
+    const correctAnswer = quiz.questions[questionIndex].correctAnswer;
+    const isCorrect = correctAnswer === answerIndex;
+    socket.emit('answer_result', { isCorrect });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   /**
    * CHAT FUNCTIONALITY
